@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Skill Neologisms - vocabulary-level soft tokens that let LLMs learn new composable skills without weight updates.">
+  <meta name="keywords" content="LLM, continual learning, prompt tuning, soft prompts, compositionality, skill acquisition, catastrophic forgetting">
+  <title>Skill Neologisms: Towards Skill-based Continual Learning</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/skill-neologisms.css">
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [["\\(", "\\)"]],
+        displayMath: [["\\[", "\\]"]]
+      },
+      svg: { fontCache: "global" }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+</head>
+<body>
+  <main class="project-page">
+    <header class="project-hero">
+      <h1>Skill Neologisms: Towards Skill-based Continual Learning</h1>
+      <p class="authors">Antonin Berthon<sup>1</sup>, Nicolás Astorga<sup>1</sup>, Mihaela van der Schaar<sup>1</sup></p>
+      <p class="affiliation"><sup>1</sup>University of Cambridge</p>
+      <p class="venue-line"><strong>ICML 2026, Spotlight Poster</strong></p>
+      <nav class="project-links" aria-label="Project links">
+        <a href="https://arxiv.org/abs/2605.04970"><img class="link-icon arxiv-logo" src="assets/arxiv-logomark-small.svg" alt="" aria-hidden="true"> Paper</a>
+        <a href="https://github.com/antoninbrthn/skill-neologisms">
+          <svg class="link-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 0C3.58 0 0 3.67 0 8.2c0 3.63 2.29 6.7 5.47 7.78.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.5-2.23.5-2.69-.98-2.69-.98-.36-.95-.89-1.2-.89-1.2-.73-.51.06-.5.06-.5.8.06 1.22.85 1.22.85.72 1.25 1.88.89 2.34.68.07-.53.28-.89.51-1.1-1.78-.21-3.64-.91-3.64-4.04 0-.89.31-1.62.82-2.2-.08-.21-.36-1.04.08-2.17 0 0 .67-.22 2.2.84A7.45 7.45 0 0 1 8 4c.68 0 1.36.09 2 .27 1.53-1.06 2.2-.84 2.2-.84.44 1.13.16 1.96.08 2.17.51.58.82 1.31.82 2.2 0 3.14-1.87 3.83-3.65 4.04.29.26.54.76.54 1.53 0 1.1-.01 1.99-.01 2.26 0 .22.15.48.55.39A8.12 8.12 0 0 0 16 8.2C16 3.67 12.42 0 8 0Z"/>
+          </svg>
+          Code
+        </a>
+        <a href="https://huggingface.co/collections/antoninbrthn/skill-neologisms"><span aria-hidden="true">🤗</span> Hugging Face</a>
+      </nav>
+      <p class="tldr"><strong>TL;DR</strong> Skill neologisms are trainable soft tokens added to an LLM's vocabulary that encapsulate a single skill - enabling the frozen model to learn new, composable skills without any weight updates, and letting independently learned skills be combined zero-shot.</p>
+    </header>
+
+    <figure class="hero-figure">
+      <img src="assets/skill-neologisms/fig1-new.png" alt="Overview of Skill Neologisms compared with LoRA and Prompt Tuning">
+      <figcaption><strong>Overview of Skill Neologisms.</strong> 
+      The method learns vocabulary-level skill tokens from skill-centered datasets, avoiding weight updates while supporting compositional transfer and multi-skill composition.</figcaption>
+    </figure>
+
+    <section>
+      <h2>Motivation: Continually Growing LLM Skills</h2>
+      <p>Modern LLMs demonstrate mastery over an ever-growing range of skills, and the ability to compose them flexibly beyond their training distribution. As LLMs get pushed into more and more domains, a natural question follows: how do we keep <em>adding</em> new skills to a deployed model, in a way that scales?</p>
+
+      <p>The existing toolbox falls short:</p>
+      <ul>
+        <li><strong>Fine-tuning / LoRA</strong> risks catastrophic forgetting - previously mastered capabilities can disappear, and safety properties can silently erode.</li>
+        <li><strong>In-context learning</strong> composes skills reasonably well in simple settings, but doesn't scale: it is bounded by the model's effective context length, and underperforms parameter-efficient fine-tuning as tasks get harder.</li>
+        <li><strong>Prompt tuning</strong> learns soft tokens prepended to the prompt and can rival full fine-tuning in some settings - but the learned prefixes are typically <em>task-specific</em>, not <em>skill-specific</em>, and cannot be composed or adapted to new settings without retraining.</li>
+      </ul>
+
+      <aside class="central-question">
+        <p><strong>Can the compositional abilities of LLMs be leveraged to learn new composable skills without weight updates?</strong></p>
+      </aside>
+
+      <h3>Skill-based continual learning: three required properties</h3>
+      <p>We call this objective <strong>skill-based continual learning</strong>, and argue it requires three properties to be practical and scalable:</p>
+      <ul>
+        <li><strong>P1 - No weight updates:</strong> new skills are learned without modifying the LLM's parameters, ruling out catastrophic forgetting by construction.</li>
+        <li><strong>P2 - Compositional transfer:</strong> a learned skill composes with the model's existing skills in combinations <em>not seen during training</em>, including out-of-distribution skill combinations.</li>
+        <li><strong>P3 - Multi-skill composition:</strong> multiple <em>independently</em> learned skills can be combined zero-shot, without any joint training on their combination.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Skill Neologisms</h2>
+      <p>Building on the notion of <em>neologisms</em> proposed by Hewitt et al. (2025) for human-machine communication, we propose <strong>skill neologisms</strong>: vocabulary-level soft tokens trained to encapsulate a single, specific skill.</p>
+
+      <p>A <strong>skill neologism</strong> for skill \(S\) is a set of learnable soft tokens \(\theta_S \in \mathbb{R}^{d_{model} \times l}\), added as new vocabulary entries and embeddings on top of a frozen pretrained model \(\mathcal{M}\):</p>
+      <div class="math-block">
+        \[
+        \mathcal{V}' = \mathcal{V} \cup \{\langle S_1\rangle, \dots, \langle S_l\rangle\}, \qquad
+        E' = E \cup \theta_S
+        \]
+      </div>
+
+      <p>The tokens are optimized end-to-end, backpropagating through the frozen model, on an <strong>\(S\)-centered dataset</strong> \(\mathcal{D}(S, \Sigma)\) - a dataset where every sample requires skill \(S\), mixed with other skills \(\Sigma\) the model already masters:</p>
+      <div class="math-block">
+        \[
+        \theta_S^{*} = \arg\min_{\theta_S} \; \mathbb{E}_{t \sim \mathcal{D}(S,\Sigma)}
+        \big[\mathcal{L}\big(\mathcal{M}(\theta_{\text{LLM}}, \theta_S, \phi_S(t))\big)\big].
+        \]
+      </div>
+      <p>Here, \(\phi_S\) is an <em>insertion function</em> that splices the skill tokens into the text in a semantically sensible place, for example replacing the word or keyword for the skill, or inserting a short instruction like "using \(\langle S\rangle\)".</p>
+
+      <details class="folded-box">
+        <summary>Examples of insertion functions</summary>
+        <div class="table-wrap compact-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Insertion function</th>
+                <th>Example</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Word replacement</td>
+                <td><code>[ADD][SHIFT]7283=...</code> becomes <code>[ADD]⟨SHIFT⟩7283=...</code></td>
+              </tr>
+              <tr>
+                <td>Task instruction</td>
+                <td><code>Sort these numbers:</code> becomes <code>Sort these numbers using &lt;SORT&gt;:</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+
+      <figure class="paper-figure">
+        <img src="assets/skill-neologisms/fig2.png" alt="Skill Neologism method diagram with initial setting, skill-centered dataset, and training procedure">
+        <figcaption><strong>Skill-centered training.</strong> Each new token is trained in contexts where the target skill appears with diverse known skills, while the base LLM remains frozen.</figcaption>
+      </figure>
+
+      <p>Two design choices distinguish skill neologisms from ordinary prompt tuning, and are what make them composable:</p>
+      <ul>
+        <li><strong>Skill-centered training</strong> (not task-centered): every training sample requires the target skill, mixed with a diverse set of other skills. This is the inductive bias that pushes the soft tokens toward encoding the <em>skill itself</em> rather than a specific task.</li>
+        <li><strong>Vocabulary-level integration:</strong> the skill lives as an actual vocabulary element integrated in the context, leveraging the model's own in-context learning ability rather than acting as a fixed prefix.</li>
+      </ul>
+
+      <p>Together, these two ingredients are hypothesized to produce skill representations general enough to transfer to out-of-distribution skill combinations, and to allow multiple independently trained skill tokens to simply be <em>concatenated into the context</em> at inference time and composed zero-shot.</p>
+
+      <p><strong>Training procedure at a glance:</strong> extend the vocabulary and embedding matrix with the new skill tokens, then for each epoch and each skill-centered training sample, insert the tokens via \(\phi_S\), compute a standard cross-entropy loss, and update <em>only</em> the skill tokens - the rest of the model stays frozen throughout.</p>
+    </section>
+
+    <section>
+      <h2>Motivating Observation: Some Tokens Already Behave Like Skills</h2>
+      <p>Before training any new skill tokens, we first check whether pretrained models already show hints that vocabulary elements can encode procedural knowledge.</p>
+
+      <p><strong>Intuition:</strong> during pretraining, certain tokens are consistently seen in contexts tied to a specific operation. For example, the token "XOR" mostly shows up in text explaining the XOR logical operation. If so, that token might already function like a "skill token" for XOR.</p>
+
+      <p><strong>Setup:</strong> we evaluate several open-source LLMs (Qwen-2.5-7B, Llama-3.1-8B, Ministral-3-8B, Phi-4) on binary-operation completion tasks (XOR and XNOR on 3-bit sequences), comparing three prompting conditions: only examples, examples plus a natural-language description, and examples plus only the operation's keyword ("XOR" or "XNOR").</p>
+
+      <p>XOR is a common word, frequent in pretraining text; XNOR is much rarer, roughly 15x less frequent per Google NGram Viewer. This gives a natural contrast in how much "skill signal" each token could plausibly have picked up during pretraining.</p>
+
+      <figure class="paper-figure">
+        <img src="assets/skill-neologisms/xor_xnor_multimodel_prompt_description_accuracy.png" alt="Accuracy on XOR and XNOR completion across four models and three prompt conditions">
+        <figcaption><strong>Some pretrained tokens already act like procedural handles.</strong> For XOR, the bare keyword can outperform examples-only and text-description prompts; for XNOR, the same effect does not appear.</figcaption>
+      </figure>
+
+      <p><strong>Result:</strong> for XOR, just providing the bare keyword "XOR" substantially beats both the example-only and the text-description conditions - suggesting the token "XOR" has already absorbed procedural knowledge about the operation from pretraining. For XNOR, neither the keyword nor the description helps beyond examples alone: the rarer token has not accumulated enough signal to encode the skill.</p>
+
+      <aside class="takeaway"><strong>Takeaway:</strong> Pretrained LLMs exhibit tokens that already encode procedural knowledge - this motivates using vocabulary-level parameters to explicitly learn skill representations.</aside>
+    </section>
+
+    <section>
+      <h2>Controlled Setup: Algorithmic Skill Composition</h2>
+      <p>To rigorously test Properties 2 and 3, we need a setting with <strong>explicit, unambiguous sample-to-skill mappings</strong> - natural language is too implicit for that. So we build a synthetic digit-sequence transformation task.</p>
+
+      <p>Each sample has the form <code>[OP-1]...[OP-k] x = y</code>, where <code>x</code> is a random digit sequence and <code>y</code> is the result of applying operations <code>OP-1, ..., OP-k</code> to <code>x</code> in sequence.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Skill set</th>
+              <th>Skills</th>
+              <th>Role</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>\(\Sigma_{\text{pretrain}}\)</td>
+              <td>ASC, DESC, ADD, SUB, POL, REV, ID</td>
+              <td>Already mastered by the base model</td>
+            </tr>
+            <tr>
+              <td>\(S_{\text{new}}\)</td>
+              <td>SHIFT, INV-POL</td>
+              <td>New skills, learned via skill neologisms with a frozen base model</td>
+            </tr>
+            <tr>
+              <td>\(S_{\text{held-out}}\)</td>
+              <td>one of \(\Sigma_{\text{pretrain}}\)</td>
+              <td>Held out of the new skill's training data - used to test OOD composition</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <ol>
+        <li>Fine-tune a Qwen2.5-0.5B base model via LoRA on compositions of the seven \(\Sigma_{\text{pretrain}}\) operations, across sequence lengths 2-9, with lengths 5, 7, and 9 held out at pretraining time to test length generalization. This gives us \(\mathcal{M}_{\text{pretrain}}\), a model with strong, generalizing mastery of the base skill set.</li>
+        <li>Freeze \(\mathcal{M}_{\text{pretrain}}\) entirely, and learn skill neologisms for the two new skills SHIFT and INV-POL, training on data that mixes each new skill with a subset of the pretraining skills, holding one pretraining skill out at a time to create an OOD test.</li>
+      </ol>
+
+      <div class="prompt-grid" aria-label="Prompt examples">
+        <div>
+          <span>Training sample</span>
+          <code>[ADD][SHIFT]7283=4839</code>
+        </div>
+        <div>
+          <span>Skill-neologism training sample</span>
+          <code>[ADD]&lt;SHIFT&gt;7283=4839</code>
+        </div>
+        <div>
+          <span>Held-out test sample</span>
+          <code>[HELD-OUT-SKILL]&lt;SHIFT&gt;6571=?</code>
+        </div>
+        <div>
+          <span>Multi-skill composition sample</span>
+          <code>&lt;SHIFT&gt;&lt;INV-POL&gt;6571=?</code>
+        </div>
+      </div>
+
+      <p>We compare skill neologisms against two natural baselines: <strong>prompt tuning</strong> with the same soft token length, and <strong>LoRA fine-tuning</strong>.</p>
+    </section>
+
+    <section>
+      <h2>Composing with Held-Out Skills (Property 2)</h2>
+      <p><strong>Question:</strong> after learning SHIFT or INV-POL, does the model only work when composed with the specific pretraining skills seen during its training - or does it generalize to a skill it never saw mixed with SHIFT/INV-POL at all?</p>
+
+      <figure class="paper-figure key-figure">
+        <img src="assets/skill-neologisms/compare_skill_to_baselines_qwen_pt_k2.png" alt="Two-skill composition accuracy for LoRA, Prompt Tuning, and Skill Neologisms">
+        <figcaption><strong>Skill neologisms transfer best to held-out compositions.</strong> All methods solve in-distribution compositions, but skill neologisms retain higher OOD accuracy when the new skill is composed with a held-out skill not seen during training.</figcaption>
+      </figure>
+
+      <p><strong>Result:</strong> all three methods reach near-perfect accuracy in-distribution. But out-of-distribution - composing the new skill with a skill it never saw during training - they diverge sharply: LoRA collapses (0.16 / 0.28 average accuracy), prompt tuning is intermediate (0.60 / 0.57), and skill neologisms hold up best (0.75 / 0.84 average accuracy).</p>
+
+      <p>LoRA appears to overfit the training distribution rather than learning a genuinely composable representation of the new skill; skill neologisms' advantage over prompt tuning - despite both optimizing the same number of soft parameters - suggests that embedding the tokens directly into the model's vocabulary gives real additional flexibility for learning composable skill representations. The same pattern holds for 3-skill compositions.</p>
+
+      <aside class="takeaway"><strong>Takeaway:</strong> Skill neologisms learn composable skill representations that transfer to unseen compositions, without any additional training.</aside>
+    </section>
+
+    <section>
+      <h2>Zero-Shot Composition of Independently Learned Skills (Property 3)</h2>
+      <p><strong>Question:</strong> can we take the SHIFT skill neologism and the INV-POL skill neologism - each trained completely independently, never seen together during training - and just drop both into the same prompt to get a model that does both at once?</p>
+
+      <p>This is the property that structurally distinguishes skill neologisms from LoRA and prompt tuning: those methods cannot be composed post hoc without retraining on the joint task. As a natural baseline for "zero-shot composition," we compare against <strong>in-context learning</strong>: providing the frozen base model with \(N \in \{10, 20, 50, 100\}\) examples of each skill directly in-context, \(2N\) examples total, instead of any soft tokens.</p>
+
+      <figure class="paper-figure key-figure independent-composition-figure">
+        <img src="assets/skill-neologisms/compo_icl_results.png" alt="Zero-shot multi-skill composition accuracy compared with in-context learning">
+        <figcaption><strong>Independently learned skill tokens compose zero-shot.</strong> Skill neologisms for SHIFT and INV-POL are trained separately, then inserted together at inference time and compared with in-context learning.</figcaption>
+      </figure>
+
+      <p><strong>Result:</strong> skill neologisms significantly and consistently outperform in-context learning across all sequence lengths. The independently trained skill tokens carry over genuinely reusable procedural knowledge that composes zero-shot; in-context learning, by contrast, struggles to extract and combine the relevant patterns purely from examples.</p>
+
+      <aside class="takeaway"><strong>Takeaway:</strong> Independently learned skill neologisms can be successfully composed zero-shot.</aside>
+    </section>
+
+    <section>
+      <h2>What Makes It Work: Ablations</h2>
+      <p>We ran three ablations to understand <em>why</em> skill neologisms work:</p>
+
+      <div class="ablation-grid">
+        <article>
+          <h3>Limited capacity acts as an inductive bias for generalization.</h3>
+          <p>Varying the skill neologism length from \(l=1\) to \(l=200\), OOD accuracy first <em>increases</em> with more capacity, then <em>drops</em> past \(l \approx 20\). Limited parameter capacity appears to act as an inductive bias toward learning a generally composable skill representation, rather than overfitting - echoing the LoRA overfitting pattern seen in Result 1.</p>
+        </article>
+        <article>
+          <h3>More diverse training compositions help.</h3>
+          <p>Training the skill token on more complex compositions, higher \(k_{max}\), generally improves OOD generalization to held-out skills, even for simpler 2-skill test compositions.</p>
+        </article>
+        <article>
+          <h3>Effect of initialization and label noise.</h3>
+          <p>Initializing skill tokens from the mean embedding of the pretrained skill tokens gives a small edge over random initialization, but random init still yields strong OOD composition. Accuracy on single-operation samples is robust to up to around 40% noisy skill labels in the training set, but noise starts to visibly degrade 2- and 3-op OOD composition performance around 20%.</p>
+        </article>
+      </div>
+
+      <figure class="paper-figure">
+        <img src="assets/skill-neologisms/effect_of_skill_length.png" alt="Effect of skill neologism length on in-distribution and OOD composition accuracy">
+        <figcaption><strong>Limited capacity as an inductive bias.</strong> OOD accuracy improves with additional token capacity up to a point, then declines as the learned representation becomes easier to overfit.</figcaption>
+      </figure>
+    </section>
+
+    <section>
+      <h2>Does This Hold Up in Natural Language? (Skill-Mix)</h2>
+      <p>Everything so far used a controlled, synthetic setting with unambiguous skill labels - useful for clean measurement, but not obviously representative of realistic language tasks, where skills are far more implicit. As a final validation, we test skill neologisms on <strong>Skill-Mix</strong> (Yu et al., 2024), a benchmark that asks a model to write a short text illustrating a given list of natural-language skills, such as "metaphor" or "syllogism", on a given topic, graded by a strong LLM (GPT-5) for whether the desired skills are present.</p>
+
+      <p><strong>Setup:</strong> using Llama3.2-3B-Instruct as the base model, we pick two skills the base model is weak at - <strong>modus ponens</strong> and <strong>statistical syllogism</strong> - and train a skill neologism for each independently, mixed with other unrelated Skill-Mix skills during training, but never mixed with each other. We compare against LoRA and prompt tuning trained the same way, and test on queries that require both target skills simultaneously.</p>
+
+      <figure class="paper-figure key-figure">
+        <img src="assets/skill-neologisms/skillmix_combine_two.png" alt="Skill-Mix results for Modus Ponens and Statistical Syllogism with two skill neologisms">
+        <figcaption><strong>Skill neologisms extend to natural-language skills.</strong> Using both skill neologisms improves simultaneous success on modus ponens and statistical syllogism despite never training on their combination.</figcaption>
+      </figure>
+
+      <p><strong>Result:</strong> LoRA, prompt tuning, and skill neologisms all reach comparably high accuracy on the <em>specific</em> skill each was trained on - but not on the other, held-out target skill. Only skill neologisms allow the two independently learned skill tokens to simply be inserted together into the prompt, achieving high accuracy on <em>both</em> skills simultaneously, despite never having been trained on their combination.</p>
+
+      <aside class="takeaway"><strong>Takeaway:</strong> Skill neologisms extend to realistic natural-language tasks, not just the controlled algorithmic setting.</aside>
+    </section>
+
+    <section>
+      <h2>Limitations and Future Work</h2>
+      <ul>
+        <li><strong>Skill-centered dataset construction.</strong> The whole approach depends on having, or being able to construct, a dataset where every sample requires the target skill. This is natural in structured or synthetic settings and in domains with existing multi-label annotations, but may be fuzzy or effort-intensive elsewhere.</li>
+        <li><strong>Soft-token optimization challenges.</strong> Skill neologisms inherit prompt tuning's known sensitivities to initialization and hyperparameters, including token length and learning rate, and requires the target skill to be reasonably close to the model’s pretraining distribution.</li>
+        <li><strong>Compute cost.</strong> Despite being far more parameter-efficient than full fine-tuning, training skill tokens still requires backpropagating through the entire frozen model, so cost scales with model size much like fine-tuning does - this may be a real constraint at larger scale.</li>
+        <li><strong>Open directions:</strong> extending skill neologisms to settings where skills are more implicit or fuzzy, improving optimization stability for soft vocabulary tokens, and allowing the model to generate previously learned skill neologisms itself at inference time, rather than requiring them to be inserted externally.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Conclusion</h2>
+      <p>We propose <strong>skill neologisms</strong> - vocabulary-integrated soft tokens optimized on skill-centered data - as a path toward <em>skill-based continual learning</em>: adding new capabilities to an LLM without touching its weights. Across a controlled algorithmic setting and a more realistic natural-language benchmark, skill neologisms transfer compositionally to skill combinations never seen during training, and let independently learned skills be combined zero-shot - properties that existing approaches like LoRA and prompt tuning structurally lack. These properties suggest that skill neologisms are a promising direction for scalable skill-based continual learning.</p>
+    </section>
+
+    <section class="bibtex-section">
+      <h2>BibTeX</h2>
+      <pre><code>@inproceedings{
+  berthon2026skill,
+  title={Skill Neologisms: Towards Skill-based Continual Learning},
+  author={Antonin Berthon and Nicol{\'a}s Astorga and Mihaela van der Schaar},
+  booktitle={Forty-third International Conference on Machine Learning},
+  year={2026},
+}</code></pre>
+    </section>
+  </main>
+</body>
+</html>
